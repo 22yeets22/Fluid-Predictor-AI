@@ -1,3 +1,4 @@
+# The code for training the model only
 from random import randint, uniform
 
 import numpy as np
@@ -5,14 +6,34 @@ import torch
 import torch.nn as nn
 
 from constants import BATCH_SIZE, CHECKPOINT_EVERY, EPOCHS, MODEL_NAME, MODEL_VERSION, MODELS_PATH, SIZE
-from wave_simulation import WaterWaveSimulation, WaveUNet
+from wave_simulation import WaterWaveSimulation, WaveUNet, WaveUNetV2  # noqa: F401
 
 
 def generate_batch(batch_size):
     batch_data = []
     batch_labels = []
 
-    while len(batch_data) < batch_size:
+    batch_type = randint(1, 8)
+    if batch_type == 1:
+        # all random values
+        random_values = np.random.uniform(0.0, 1.0, (SIZE, SIZE))
+        sim = WaterWaveSimulation(size=SIZE, heights=random_values)
+    elif batch_type == 2:
+        # Only zeros
+        sim = WaterWaveSimulation(size=SIZE, heights=np.zeros((SIZE, SIZE)))
+    elif 2 < batch_type < 6:
+        # Small disturbances
+        disturbances = [
+            [
+                (randint(0, SIZE - 1), randint(0, SIZE - 1)),
+                (randint(0, SIZE - 1), randint(0, SIZE - 1)),
+                uniform(0.01, 0.05),
+            ]
+            for _ in range(randint(1, 6))
+        ]
+        sim = WaterWaveSimulation(size=SIZE, disturbances=disturbances)
+    else:
+        # Large disturbances
         disturbances = [
             [
                 (randint(0, SIZE - 1), randint(0, SIZE - 1)),
@@ -21,24 +42,20 @@ def generate_batch(batch_size):
             ]
             for _ in range(randint(1, 8))
         ]
-
         sim = WaterWaveSimulation(size=SIZE, disturbances=disturbances)
-        if randint(1, 50) == 1:
-            random_values = np.random.uniform(0.0, 1.0, (SIZE, SIZE))
-            sim = WaterWaveSimulation(size=SIZE, disturbances=disturbances, heights=random_values)
 
-        for _ in range(randint(1, batch_size - len(batch_data))):
-            current_state = sim.height.flatten()
-            sim.update()
-            next_state = sim.height.flatten()
-            batch_data.append(current_state)
-            batch_labels.append(next_state)
+    for _ in range(batch_size):
+        current_state = sim.height.flatten()
+        sim.update()
+        next_state = sim.height.flatten()
+        batch_data.append(current_state)
+        batch_labels.append(next_state)
 
-    return torch.FloatTensor(np.array(batch_data)), torch.FloatTensor(np.array(batch_labels))
+    return batch_type, torch.FloatTensor(np.array(batch_data)), torch.FloatTensor(np.array(batch_labels))
 
 
 # Initialize Model, Loss, and Optimizer
-model = WaveUNet()
+model = WaveUNetV2()
 
 # model.load_state_dict(torch.load("models\\wave_predictor_3_final.pth", weights_only=True))
 
@@ -47,7 +64,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)  #
 
 # Modified training loop
 for epoch in range(EPOCHS):
-    x_batch, y_batch = generate_batch(BATCH_SIZE)  # Generate new batch each epoch
+    batch_type, x_batch, y_batch = generate_batch(BATCH_SIZE)  # Generate new batch each epoch
     x_batch = x_batch.view(BATCH_SIZE, 1, SIZE, SIZE)
     y_batch = y_batch.view(BATCH_SIZE, 1, SIZE, SIZE)
 
@@ -57,8 +74,7 @@ for epoch in range(EPOCHS):
     loss.backward()
     optimizer.step()
 
-    if epoch % 10 == 0:
-        print(f"Epoch {epoch}, Loss: {loss.item():.8f}")
+    print(f"Epoch {epoch} (batch type {batch_type}), Loss: {loss.item():.8f}")
 
     if epoch % CHECKPOINT_EVERY == 0 and epoch > 0:
         print("Saving checkpoint...")

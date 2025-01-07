@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import torch.nn as nn
 
 from constants import SIZE
@@ -18,7 +19,6 @@ class WaterWaveSimulation:
             self.height = np.zeros((size, size))  # Wave height
         else:
             self.height = heights
-
 
         if disturbances is None:
             disturbances = [[(SIZE // 2 - 5, SIZE // 2 - 5), (SIZE // 2 + 5, SIZE // 2 + 5), 1.0]]
@@ -55,7 +55,12 @@ class WaterWaveSimulation:
         # Apply damping
         self.velocity *= self.damping
 
+    def reset(self):
+        self.velocity = np.zeros((self.size, self.size))
+        self.height = np.zeros((self.size, self.size))
 
+
+# Legacy:
 # Neural Network Predictor for Wave Evolution
 class WavePredictor(nn.Module):
     def __init__(self, input_size=SIZE**2):
@@ -63,16 +68,16 @@ class WavePredictor(nn.Module):
         self.network = nn.Sequential(
             nn.Linear(input_size, 4096),
             nn.BatchNorm1d(4096),
-            nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Tanh(),
+            nn.Dropout(0.2),
             nn.Linear(4096, 2048),
             nn.BatchNorm1d(2048),
-            nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Tanh(),
+            nn.Dropout(0.2),
             nn.Linear(2048, 4096),
             nn.BatchNorm1d(4096),
-            nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Tanh(),
+            nn.Dropout(0.2),
             nn.Linear(4096, input_size),
         )
 
@@ -122,3 +127,39 @@ class WaveUNet(nn.Module):
         x = self.encoder(x)
         x = self.decoder(x)
         return x
+
+
+# New:
+class WaveUNetV2(nn.Module):
+    def __init__(self):
+        super(WaveUNetV2, self).__init__()
+
+        # Encoder
+        self.enc1 = nn.Sequential(nn.Conv2d(1, 32, kernel_size=3, padding=1), nn.LeakyReLU(0.1))
+        self.enc2 = nn.Sequential(nn.Conv2d(32, 64, kernel_size=3, padding=1), nn.LeakyReLU(0.1))
+
+        # Bottleneck
+        self.bottleneck = nn.Sequential(nn.Conv2d(64, 128, kernel_size=3, padding=1), nn.LeakyReLU(0.1))
+
+        # Decoder
+        self.dec2 = nn.Sequential(nn.ConvTranspose2d(128, 64, kernel_size=3, padding=1), nn.LeakyReLU(0.1))
+        self.dec1 = nn.Sequential(nn.ConvTranspose2d(64, 32, kernel_size=3, padding=1), nn.LeakyReLU(0.1))
+
+        # Output layer
+        self.final = nn.Conv2d(32, 1, kernel_size=3, padding=1)
+
+    def forward(self, x):
+        # Encoder
+        e1 = self.enc1(x)
+        e2 = self.enc2(e1)
+
+        # Bottleneck
+        b = self.bottleneck(e2)
+
+        # Decoder with skip connections
+        d2 = self.dec2(b) + e2  # Skip connection
+        d1 = self.dec1(d2) + e1  # Skip connection
+
+        # Output
+        out = self.final(d1)
+        return torch.tanh(out)  # Output in range [-1, 1]

@@ -4,10 +4,10 @@ import matplotlib.pyplot as plt
 import torch
 from matplotlib import animation
 
-from constants import MODEL_NAME, MODEL_VERSION, MODELS_PATH, SIZE, USE_LAST_PREDICTION, FRAME_COUNT, FPS
-from wave_simulation import WaterWaveSimulation, WaveUNet
+from constants import FPS, FRAME_COUNT, MODEL_NAME, MODEL_VERSION, MODELS_PATH, SIZE, USE_LAST_PREDICTION
+from wave_simulation import WaterWaveSimulation, WaveUNet, WaveUNetV2  # noqa: F401
 
-loaded_model = WaveUNet()
+loaded_model = WaveUNetV2()
 loaded_model.load_state_dict(torch.load(f"{MODELS_PATH}\\{MODEL_NAME}_{MODEL_VERSION}_final.pth", weights_only=True))
 loaded_model.eval()
 
